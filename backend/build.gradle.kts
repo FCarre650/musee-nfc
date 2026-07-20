@@ -1,9 +1,12 @@
 plugins {
     kotlin("jvm") version "2.0.21"
     kotlin("plugin.serialization") version "2.0.21"
-    id("io.ktor.plugin") version "2.3.12"
     application
 }
+// Pas de plugin "io.ktor.plugin" : on ne se sert d'aucune de ses fonctionnalités (fat-jar,
+// image Docker). Son plugin Shadow embarqué (ancien) casse sur les Gradle récents (API
+// `Convention` retirée) — voir l'erreur "Could not get unknown property 'convention'".
+// Toutes les dépendances Ktor sont déclarées explicitement ci-dessous, donc rien ne change.
 
 group = "com.museenfc"
 version = "0.1.0"
