@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Supervision des rondes — Musée Carré</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="/supervision.css" />
+</head>
+<body>
+
+  <section id="login-screen" class="screen">
+    <div class="login-card">
+      <h1>Musée Carré <span class="gold">·</span> PC Sécurité</h1>
+      <p class="subtitle">Supervision des rondes — accès chef de poste / direction</p>
+      <form id="login-form">
+        <label>Identifiant
+          <input id="login-input" type="text" autocomplete="username" required />
+        </label>
+        <label>Mot de passe
+          <input id="password-input" type="password" autocomplete="current-password" required />
+        </label>
+        <button type="submit">Se connecter</button>
+        <p id="login-error" class="error hidden"></p>
+      </form>
+      <p class="hint">Démo : claire / claire123 (chef de poste) — admin / admin123 (direction)</p>
+    </div>
+  </section>
+
+  <section id="dashboard-screen" class="screen hidden">
+    <header class="topbar">
+      <div class="brand">Musée Carré <span class="gold">·</span> Supervision des rondes</div>
+      <div class="status">
+        <span id="conn-dot" class="dot"></span>
+        <span id="conn-label">connexion…</span>
+        <span class="sep">|</span>
+        <span id="clock"></span>
+        <span class="sep">|</span>
+        <span id="whoami"></span>
+        <button id="logout-btn" class="link-btn">déconnexion</button>
+      </div>
+    </header>
+
+    <main id="rooms-grid" class="grid"></main>
+  </section>
+
+  <template id="room-card-template">
+    <article class="room-card">
+      <div class="room-card-top">
+        <h2 class="room-name"></h2>
+        <span class="room-zone"></span>
+      </div>
+      <div class="elapsed"></div>
+      <div class="room-card-bottom">
+        <div class="last-guard"></div>
+        <div class="threshold"></div>
+      </div>
+    </article>
+  </template>
+
+  <script src="/supervision.js"></script>
+</body>
+</html>

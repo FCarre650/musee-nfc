@@ -1,0 +1,24 @@
+# Build
+**/build/
+**/.gradle/
+*.class
+
+# Backend : base H2 locale (fichier généré au premier lancement, contient le seed de démo)
+backend/data/
+
+# Android
+android/local.properties
+android/.cxx/
+android/captures/
+*.apk
+*.ap_
+*.aab
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Logs
+*.log

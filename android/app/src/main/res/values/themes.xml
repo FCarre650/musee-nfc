@@ -1,0 +1,8 @@
+<resources>
+    <!-- Thème minimal juste pour la fenêtre native ; l'UI elle-même est en Jetpack Compose
+         (voir ui/theme/Theme.kt), donc pas besoin de la lib Material Components ici. -->
+    <style name="Theme.MuseeNfc" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/ink</item>
+        <item name="android:statusBarColor">@color/ink</item>
+    </style>
+</resources>

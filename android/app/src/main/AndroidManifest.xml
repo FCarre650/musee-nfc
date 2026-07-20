@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.NFC" />
+
+    <!-- required=false : l'app s'installe même sur un device sans NFC (utile pour tester
+         login / historique en émulateur) ; l'écran de scan affiche un message explicite
+         si aucun adaptateur NFC n'est détecté (voir MainActivity.kt). -->
+    <uses-feature
+        android:name="android.hardware.nfc"
+        android:required="false" />
+
+    <application
+        android:name=".MuseeNfcApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.MuseeNfc"
+        android:usesCleartextTraffic="true">
+        <!-- usesCleartextTraffic=true : POC en HTTP sur réseau local (cf. README).
+             À retirer dès que le backend est servi en HTTPS. -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.MuseeNfc">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
