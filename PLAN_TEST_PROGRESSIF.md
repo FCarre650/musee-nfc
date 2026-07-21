@@ -75,15 +75,29 @@ Si le palier 1 passe entièrement, vous avez déjà un **POC de secours démontr
 
 ## Palier 4 — Provisioning + verrouillage (É3, cœur sécurité R1)
 
+Ordre important, surtout si vous réutilisez un patch déjà testé plus tôt dans la semaine : le
+serveur refuse de re-provisionner un `tagUid` déjà associé à une salle (`409 Ce patch (UID) est
+déjà associé à une salle`). Pour rejouer ce palier, prenez un **patch physique jamais provisionné**
+(ou effacez la salle correspondante côté admin avant de retenter avec le même patch).
+
 1. ☐ Se connecter avec `admin`/`admin123`, aller sur l'onglet « Provisionner ».
-2. ☐ Remplir une salle de test, cliquer « Provisionner », approcher un patch **NTAG213 vierge**.
+2. ☐ Remplir une salle de test, cliquer « Provisionner », approcher un patch **NTAG213 vierge** et
+   le maintenir immobile jusqu'à ce que le statut affiche un résultat (succès ou échec explicite :
+   l'app confirme désormais le verrouillage par relecture de la puce avant d'annoncer un succès,
+   donc un message de succès veut vraiment dire que le patch est verrouillé).
 3. ☐ Vérifier côté supervision web que la salle apparaît dans la liste (`GET /api/checkpoints`
-   ou re-render du snapshot).
+   ou re-render du snapshot) — ceci est vrai dès l'étape 2 même si le verrouillage NFC a échoué,
+   puisque la salle est créée côté serveur avant l'écriture sur le patch : ne pas le prendre comme
+   preuve que le patch est verrouillé, seul le statut affiché à l'étape 2 en fait foi.
 4. ☐ Cliquer « Tester le verrouillage », approcher le **même patch** → doit afficher
-   « réécriture refusée » (la puce protège ses pages en écriture sans le mot de passe).
-   *Si ce test échoue (écriture acceptée), vérifiez `NfcHelper.provisionAndLock` : c'est le point
-   du code le plus délicat (registres CFG0/CFG1/PWD/PACK NTAG213) et le seul qui n'a pas pu être
-   vérifié sur puce physique pendant la génération de ce projet.*
+   « écriture refusée » (la puce protège ses pages en écriture sans le mot de passe). Ce test lit
+   et restaure la page testée automatiquement : il ne modifie jamais durablement le patch, qu'il
+   soit verrouillé ou non, donc vous pouvez le relancer autant de fois que nécessaire sans
+   reprovisionner.
+   *Si ce test échoue (écriture acceptée) de façon répétée sur un patch dont l'étape 2 a confirmé
+   le verrouillage, vérifiez `NfcHelper.provisionAndLock`/`testLock` : c'est le point du code le
+   plus délicat (registres CFG0/CFG1/PWD/PACK NTAG213) et le seul qui n'a pas pu être vérifié sur
+   puce physique pendant la génération de ce projet.*
 
 ## Palier 5 — Tranche verticale complète avec un vrai patch (É2, bout en bout)
 

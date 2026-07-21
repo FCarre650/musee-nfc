@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.museenfc.app.MuseeNfcApp
 import com.museenfc.app.data.repository.CheckpointOutcome
 import com.museenfc.app.network.Session
+import com.museenfc.app.nfc.LockTestResult
 import com.museenfc.app.nfc.NfcHelper
 import com.museenfc.app.nfc.ProvisionResult
 import kotlinx.coroutines.launch
@@ -49,6 +50,7 @@ fun ProvisionScreen(
     var zone by remember { mutableStateOf("") }
     var thresholdText by remember { mutableStateOf("60") }
     var statusText by remember { mutableStateOf("") }
+    var isBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     DisposableEffect(Unit) {
@@ -91,31 +93,42 @@ fun ProvisionScreen(
         )
 
         Button(
-            enabled = nfcAvailable && roomName.isNotBlank() && thresholdText.isNotBlank(),
+            enabled = nfcAvailable && !isBusy && roomName.isNotBlank() && thresholdText.isNotBlank(),
             onClick = {
                 val threshold = thresholdText.toIntOrNull() ?: 60
                 statusText = "Approchez le patch neuf du téléphone…"
+                isBusy = true
                 listenForTags { tag ->
+                    // Capture unique : on coupe l'écoute tout de suite. Le provisioning prend
+                    // plusieurs centaines de ms (réseau + plusieurs écritures NFC) ; si on
+                    // laissait l'écoute active, le même tap prolongé redéclenchait ce callback
+                    // en double pendant que le premier traitement tournait encore, avec deux
+                    // accès concurrents à la puce — cause des échecs de verrouillage aléatoires.
+                    stopListeningForTags()
                     val uid = NfcHelper.readUid(tag)
                     scope.launch {
-                        statusText = "UID $uid lu, création côté serveur…"
-                        when (
-                            val outcome = app.checkpointRepository.create(
-                                session, uid, roomName, zone.ifBlank { null }, threshold,
-                            )
-                        ) {
-                            is CheckpointOutcome.Success -> {
-                                val lockResult = NfcHelper.provisionAndLock(
-                                    tag, outcome.checkpoint.checkpointCode, PROVISION_PASSWORD, PROVISION_PACK,
+                        try {
+                            statusText = "UID $uid lu, création côté serveur…"
+                            when (
+                                val outcome = app.checkpointRepository.create(
+                                    session, uid, roomName, zone.ifBlank { null }, threshold,
                                 )
-                                statusText = when (lockResult) {
-                                    is ProvisionResult.Success ->
-                                        "✔ '$roomName' créée et patch verrouillé (code ${lockResult.checkpointCode.take(8)}…)"
-                                    is ProvisionResult.Failure ->
-                                        "⚠ Salle créée côté serveur, mais verrouillage du patch échoué : ${lockResult.reason}"
+                            ) {
+                                is CheckpointOutcome.Success -> {
+                                    val lockResult = NfcHelper.provisionAndLock(
+                                        tag, outcome.checkpoint.checkpointCode, PROVISION_PASSWORD, PROVISION_PACK,
+                                    )
+                                    statusText = when (lockResult) {
+                                        is ProvisionResult.Success ->
+                                            "✔ '$roomName' créée et patch verrouillé (code ${lockResult.checkpointCode.take(8)}…)"
+                                        is ProvisionResult.Failure ->
+                                            "⚠ Salle créée côté serveur, mais verrouillage du patch échoué : ${lockResult.reason}"
+                                    }
                                 }
+                                is CheckpointOutcome.Failure -> statusText = "✘ ${outcome.message}"
                             }
-                            is CheckpointOutcome.Failure -> statusText = "✘ ${outcome.message}"
+                        } finally {
+                            isBusy = false
                         }
                     }
                 }
@@ -129,21 +142,26 @@ fun ProvisionScreen(
 
         Text("Vérification du verrouillage", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Tente une réécriture SANS mot de passe sur un patch déjà provisionné : " +
-                "doit être refusée si le verrouillage a fonctionné.",
+            "Tente une écriture SANS mot de passe sur la page protégée d'un patch déjà " +
+                "provisionné : doit être refusée si le verrouillage a fonctionné. Le test " +
+                "restaure automatiquement le patch si jamais l'écriture passe — il ne le " +
+                "corrompt jamais, contrairement à une réécriture NDEF complète.",
             style = MaterialTheme.typography.bodySmall,
         )
         OutlinedButton(
-            enabled = nfcAvailable,
+            enabled = nfcAvailable && !isBusy,
             onClick = {
                 statusText = "Approchez un patch verrouillé pour tester la réécriture…"
+                isBusy = true
                 listenForTags { tag ->
-                    val accepted = NfcHelper.attemptUnauthorizedRewrite(tag, "tentative-sabotage")
-                    statusText = if (accepted) {
-                        "✘ ATTENTION : la réécriture a été ACCEPTÉE — ce patch n'est pas verrouillé."
-                    } else {
-                        "✔ Réécriture refusée par la puce : le verrouillage fonctionne."
+                    stopListeningForTags() // capture unique, même raison que le bouton 1
+                    val result = NfcHelper.testLock(tag)
+                    statusText = when (result) {
+                        is LockTestResult.Locked -> "✔ Écriture refusée par la puce : le verrouillage fonctionne."
+                        is LockTestResult.NotLocked -> "✘ ATTENTION : l'écriture a été ACCEPTÉE — ce patch n'est pas verrouillé."
+                        is LockTestResult.Error -> "⚠ Test impossible : ${result.reason}"
                     }
+                    isBusy = false
                 }
             },
             modifier = Modifier.fillMaxWidth(),

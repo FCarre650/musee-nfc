@@ -17,6 +17,12 @@ sealed class ProvisionResult {
     data class Failure(val reason: String) : ProvisionResult()
 }
 
+sealed class LockTestResult {
+    data object Locked : LockTestResult()
+    data object NotLocked : LockTestResult()
+    data class Error(val reason: String) : LockTestResult()
+}
+
 /**
  * Toute la logique NFC bas niveau : lecture d'UID/UUID applicatif, écriture au provisioning,
  * et verrouillage par mot de passe (R1 : "verrouiller / protéger par mot de passe après
@@ -93,6 +99,17 @@ object NfcHelper {
                 // CFG0 en dernier : MIRROR=0x00, RFUI=0x00, MIRROR_PAGE=0x00, AUTH0=AUTH0_PAGE.
                 // C'est cette écriture qui active réellement la protection.
                 writePage(nfcA, CFG0_PAGE, byteArrayOf(0x00, 0x00, 0x00, AUTH0_PAGE.toByte()))
+
+                // Relecture de contrôle : certains contrôleurs NFC Android n'exposent pas le NAK
+                // de la puce comme une exception (transceive renvoie normalement), donc une écriture
+                // qui n'a pas pris se déclarait "réussie" à tort. On confirme sur la puce elle-même
+                // que AUTH0 a bien la valeur voulue avant d'annoncer un succès.
+                val cfg0Readback = readPage(nfcA, CFG0_PAGE)
+                if (cfg0Readback[3] != AUTH0_PAGE.toByte()) {
+                    return ProvisionResult.Failure(
+                        "Verrouillage non confirmé par la puce (AUTH0 pas appliqué), réessayez",
+                    )
+                }
             } finally {
                 runCatching { nfcA.close() }
             }
@@ -126,18 +143,49 @@ object NfcHelper {
         }
     }
 
-    /** Démo de sécurité : tente une réécriture NDEF sans authentification préalable.
-     *  Sur un patch verrouillé (provisionné via [provisionAndLock]), ceci doit échouer. */
-    fun attemptUnauthorizedRewrite(tag: Tag, payload: String): Boolean {
-        val ndef = Ndef.get(tag) ?: return false
+    /**
+     * Démo de sécurité (R1) : tente une écriture sans authentification préalable directement sur
+     * la première page protégée (AUTH0_PAGE), sans passer par l'API NDEF haut niveau.
+     *
+     * Pourquoi pas une réécriture NDEF complète comme avant : un message de test plus court que
+     * le checkpointCode d'origine (ex. "tentative-sabotage") tient entièrement dans les pages
+     * libres SOUS AUTH0 et n'atteint donc jamais la zone protégée — le test réussissait par
+     * construction sans rien prouver, et corrompait en prime le patch en écrasant son vrai
+     * contenu sans le restaurer. Ici on cible la page frontière elle-même, on sauvegarde son
+     * contenu avant le test et on le restaure aussitôt si l'écriture est passée : le patch
+     * ressort inchangé quel que soit le résultat du test.
+     */
+    fun testLock(tag: Tag): LockTestResult {
+        val nfcA = NfcA.get(tag) ?: return LockTestResult.Error("Puce non compatible NfcA")
         return try {
-            ndef.connect()
-            ndef.writeNdefMessage(NdefMessage(arrayOf(NdefRecord.createTextRecord("en", payload))))
-            true // écriture acceptée -> le patch n'était PAS verrouillé
-        } catch (e: Exception) {
-            false // refusé par la puce -> comportement attendu sur un patch verrouillé
+            nfcA.connect()
+            val original = readPage(nfcA, AUTH0_PAGE)
+            val decoy = byteArrayOf(0x53, 0x41, 0x42, 0x00) // valeur de test neutre, jamais persistée
+            val writeAccepted = try {
+                writePage(nfcA, AUTH0_PAGE, decoy)
+                true
+            } catch (e: IOException) {
+                false // refus explicite de la puce -> verrouillage effectif
+            }
+            if (!writeAccepted) {
+                LockTestResult.Locked
+            } else {
+                val after = readPage(nfcA, AUTH0_PAGE)
+                if (after.contentEquals(original)) {
+                    // Écriture acceptée par le contrôleur mais la puce a ignoré le NAK sans
+                    // exception : la page n'a en fait pas bougé -> verrouillage effectif.
+                    LockTestResult.Locked
+                } else {
+                    writePage(nfcA, AUTH0_PAGE, original) // restauration immédiate
+                    LockTestResult.NotLocked
+                }
+            }
+        } catch (e: TagLostException) {
+            LockTestResult.Error("Patch retiré pendant le test, réessayez")
+        } catch (e: IOException) {
+            LockTestResult.Error("Erreur de communication avec la puce, réessayez")
         } finally {
-            runCatching { ndef.close() }
+            runCatching { nfcA.close() }
         }
     }
 
@@ -145,6 +193,13 @@ object NfcHelper {
         require(data.size == 4) { "Une page NTAG21x fait 4 octets" }
         // Commande WRITE (0xA2) : 1 octet commande + 1 octet n° de page + 4 octets de données.
         nfcA.transceive(byteArrayOf(0xA2.toByte(), page.toByte()) + data)
+    }
+
+    private fun readPage(nfcA: NfcA, page: Int): ByteArray {
+        // Commande READ (0x30) : 1 octet commande + 1 octet n° de page -> renvoie 16 octets
+        // (4 pages consécutives) ; on ne garde que les 4 octets de la page demandée.
+        val response = nfcA.transceive(byteArrayOf(0x30.toByte(), page.toByte()))
+        return response.copyOfRange(0, 4)
     }
 
     private fun parseTextRecord(record: NdefRecord): String? {

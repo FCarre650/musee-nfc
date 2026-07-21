@@ -39,27 +39,38 @@ fun ScanScreen(
 ) {
     var lastResultText by remember { mutableStateOf("Approchez le téléphone d'un patch pour commencer la ronde.") }
     var lastResultIsError by remember { mutableStateOf(false) }
+    var isProcessing by remember { mutableStateOf(false) }
     val pendingCount by app.scanRepository.pendingCount().collectAsState(initial = 0)
     val scope = rememberCoroutineScope()
 
     DisposableEffect(Unit) {
         listenForTags { tag ->
+            // Le lecteur reste actif pendant toute la ronde (plusieurs salles à la suite), donc
+            // on ne peut pas simplement couper l'écoute comme au provisioning. On ignore juste
+            // les redéclenchements du même tap tant qu'un envoi est encore en cours, pour éviter
+            // un scan envoyé en double si le patch reste un instant dans le champ NFC.
+            if (isProcessing) return@listenForTags
+            isProcessing = true
             // Lecture NFC (I/O bref sur le thread du callback) puis envoi réseau en coroutine.
             val patch = NfcHelper.scan(tag)
             scope.launch {
-                when (val outcome = app.scanRepository.submitScan(session, patch, roomNameHint = "salle inconnue localement")) {
-                    is ScanOutcome.Accepted -> {
-                        lastResultIsError = false
-                        lastResultText = "✔ ${outcome.roomName} — passage enregistré"
+                try {
+                    when (val outcome = app.scanRepository.submitScan(session, patch, roomNameHint = "salle inconnue localement")) {
+                        is ScanOutcome.Accepted -> {
+                            lastResultIsError = false
+                            lastResultText = "✔ ${outcome.roomName} — passage enregistré"
+                        }
+                        is ScanOutcome.Rejected -> {
+                            lastResultIsError = true
+                            lastResultText = "✘ Refusé : ${outcome.message}"
+                        }
+                        ScanOutcome.QueuedOffline -> {
+                            lastResultIsError = false
+                            lastResultText = "⏳ Pas de réseau : scan mis en file, sera envoyé à la reconnexion"
+                        }
                     }
-                    is ScanOutcome.Rejected -> {
-                        lastResultIsError = true
-                        lastResultText = "✘ Refusé : ${outcome.message}"
-                    }
-                    ScanOutcome.QueuedOffline -> {
-                        lastResultIsError = false
-                        lastResultText = "⏳ Pas de réseau : scan mis en file, sera envoyé à la reconnexion"
-                    }
+                } finally {
+                    isProcessing = false
                 }
             }
         }
