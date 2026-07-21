@@ -73,7 +73,16 @@ Si le palier 1 passe entièrement, vous avez déjà un **POC de secours démontr
    le tag et tenter un scan → refus attendu (« patch non provisionné »), ce qui prouve déjà que
    la **lecture d'UID bas niveau fonctionne**, l'essentiel de ce palier.
 
-## Palier 4 — Provisioning + verrouillage (É3, cœur sécurité R1)
+## Palier 4 — Provisioning (É3)
+
+**Verrouillage physique (R1) temporairement désactivé dans l'app** (voir `NfcHelper.kt` :
+`provisionAndLock`/`testLock` existent toujours mais ne sont plus appelés par `ProvisionScreen`,
+qui utilise `writeCheckpointCode`) le temps de fiabiliser son comportement sur le parc de
+téléphones de test — plusieurs blocages rencontrés (crash "Tag is out of date", lenteur
+`disableReaderMode` sur MIUI) étaient liés à la fenêtre de temps avant l'écriture, pas au
+verrouillage lui-même, mais on préfère stabiliser scan/lecture/écriture d'abord. Le risque R1
+reste documenté et démontrable au pitch même sans démo live ; à réactiver (un seul point d'appel
+dans `ProvisionScreen`) si le temps le permet.
 
 Ordre important, surtout si vous réutilisez un patch déjà testé plus tôt dans la semaine : le
 serveur refuse de re-provisionner un `tagUid` déjà associé à une salle (`409 Ce patch (UID) est
@@ -90,25 +99,14 @@ pour une vraie salle en usage. Sinon, prenez simplement un patch physique jamais
 1. ☐ Se connecter avec `admin`/`admin123`, aller sur l'onglet « Provisionner ».
 2. ☐ Remplir une salle de test, cliquer « Provisionner », approcher un patch **NTAG215 vierge**
    (1er tap : lecture de l'UID puis création de la salle côté serveur). **Dès que le statut
-   demande de réapprocher le patch, retirez-le puis re-tapez** (2e tap : écriture + verrouillage) —
-   ne le laissez pas posé en continu entre les deux, ce sont deux taps distincts. C'est volontaire :
+   demande de réapprocher le patch, retirez-le puis re-tapez** (2e tap : écriture du code) — ne
+   le laissez pas posé en continu entre les deux, ce sont deux taps distincts. C'est volontaire :
    un objet Tag Android devient invalide s'il est gardé en mémoire pendant l'appel réseau du 1er
-   tap, d'où la nécessité d'un second tap tout frais pour l'écriture. L'app confirme le
-   verrouillage par relecture de la puce avant d'annoncer un succès, donc un message de succès
-   veut vraiment dire que le patch est verrouillé.
+   tap, d'où la nécessité d'un second tap tout frais pour l'écriture.
 3. ☐ Vérifier côté supervision web que la salle apparaît dans la liste (`GET /api/checkpoints`
-   ou re-render du snapshot) — ceci est vrai dès l'étape 2 même si le verrouillage NFC a échoué,
-   puisque la salle est créée côté serveur avant l'écriture sur le patch : ne pas le prendre comme
-   preuve que le patch est verrouillé, seul le statut affiché à l'étape 2 en fait foi.
-4. ☐ Cliquer « Tester le verrouillage », approcher le **même patch** → doit afficher
-   « écriture refusée » (la puce protège ses pages en écriture sans le mot de passe). Ce test lit
-   et restaure la page testée automatiquement : il ne modifie jamais durablement le patch, qu'il
-   soit verrouillé ou non, donc vous pouvez le relancer autant de fois que nécessaire sans
-   reprovisionner.
-   *Si ce test échoue (écriture acceptée) de façon répétée sur un patch dont l'étape 2 a confirmé
-   le verrouillage, vérifiez `NfcHelper.provisionAndLock`/`testLock` : c'est le point du code le
-   plus délicat (registres CFG0/CFG1/PWD/PACK NTAG215) et le seul qui n'a pas pu être vérifié sur
-   puce physique pendant la génération de ce projet.*
+   ou re-render du snapshot) — ceci est vrai dès l'étape 2 même si l'écriture NFC du 2e tap a
+   échoué, puisque la salle est créée côté serveur avant : ne pas le prendre comme preuve que le
+   patch est écrit, seul le statut affiché après le 2e tap en fait foi.
 
 ## Palier 5 — Tranche verticale complète avec un vrai patch (É2, bout en bout)
 
