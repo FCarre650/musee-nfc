@@ -73,11 +73,44 @@ object NfcHelper {
     fun scan(tag: Tag): ScannedPatch = ScannedPatch(readUid(tag), readCheckpointCode(tag))
 
     /**
+     * Provisioning SANS verrouillage : écrit uniquement le checkpointCode en NDEF. Le
+     * verrouillage matériel (R1, voir [provisionAndLock]) est temporairement mis de côté côté UI
+     * (voir ProvisionScreen) le temps de stabiliser son comportement sur le parc de téléphones
+     * de test — le mécanisme reste implémenté et documenté, simplement pas démontré en direct
+     * pour l'instant. Limite assumée : un patch provisionné ainsi est réinscriptible par
+     * n'importe qui tant que [provisionAndLock] n'est pas remis en service.
+     */
+    fun writeCheckpointCode(tag: Tag, checkpointCode: String): ProvisionResult {
+        val ndef = Ndef.get(tag)
+            ?: return ProvisionResult.Failure("Ce patch ne supporte pas NDEF (mauvais type de puce ?)")
+        return try {
+            ndef.connect()
+            ndef.writeNdefMessage(NdefMessage(arrayOf(NdefRecord.createTextRecord("en", checkpointCode))))
+            ProvisionResult.Success(checkpointCode)
+        } catch (e: TagLostException) {
+            ProvisionResult.Failure("Patch retiré trop tôt, recommencez le provisioning")
+        } catch (e: FormatException) {
+            ProvisionResult.Failure("Format NDEF refusé par la puce")
+        } catch (e: IOException) {
+            ProvisionResult.Failure("Écriture refusée par la puce")
+        } catch (e: SecurityException) {
+            ProvisionResult.Failure("Le patch n'était plus valide (retiré/reposé trop tard), réessayez")
+        } finally {
+            runCatching { ndef.close() }
+        }
+    }
+
+    /**
      * Provisioning d'un patch neuf : écrit le checkpointCode en NDEF puis pose la protection
      * par mot de passe sur les pages suivantes. Après cette opération, réécrire le patch sans
      * connaître [password] est refusé par la puce elle-même (démontrable en direct : R1).
      * La lecture reste libre (PROT=0) : un gardien doit pouvoir lire le patch sans mot de passe
      * pour scanner, seule l'écriture est protégée.
+     *
+     * Actuellement non appelée par l'UI (ProvisionScreen utilise [writeCheckpointCode]) : la
+     * priorité est mise sur la fiabilité du scan/provisioning de base pour la démo. Fonction
+     * conservée telle quelle, prête à être rebranchée une fois le verrouillage validé sur le
+     * parc de téléphones cible.
      */
     fun provisionAndLock(tag: Tag, checkpointCode: String, password: ByteArray, pack: ByteArray): ProvisionResult {
         require(password.size == 4) { "Le mot de passe NTAG21x fait exactement 4 octets" }

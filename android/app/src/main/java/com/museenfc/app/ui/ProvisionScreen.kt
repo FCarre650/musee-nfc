@@ -12,7 +12,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,20 +26,11 @@ import androidx.compose.ui.unit.dp
 import com.museenfc.app.MuseeNfcApp
 import com.museenfc.app.data.repository.CheckpointOutcome
 import com.museenfc.app.network.Session
-import com.museenfc.app.nfc.LockTestResult
 import com.museenfc.app.nfc.NfcHelper
 import com.museenfc.app.nfc.ProvisionResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-/**
- * Mot de passe de provisioning : identique pour tous les patchs dans ce POC, embarqué dans
- * l'app. Limite assumée et documentée (README, section sécurité) : en production, ce secret
- * doit être géré côté serveur (par musée, voire par patch), jamais codé en dur côté client.
- */
-private val PROVISION_PASSWORD = byteArrayOf(0x4D, 0x55, 0x53, 0x45) // "MUSE"
-private val PROVISION_PACK = byteArrayOf(0x01, 0x00)
 
 @Composable
 fun ProvisionScreen(
@@ -70,8 +60,9 @@ fun ProvisionScreen(
     ) {
         Text("Provisionner un patch", style = MaterialTheme.typography.titleLarge)
         Text(
-            "Réservé direction / chef habilité. Crée la salle côté serveur puis écrit et " +
-                "verrouille le code sur le patch NFC (R1 : le patch refusera toute réécriture non autorisée).",
+            "Réservé direction / chef habilité. Crée la salle côté serveur puis écrit le code " +
+                "sur le patch NFC. Verrouillage physique (R1) implémenté côté code mais " +
+                "temporairement désactivé pour cette démo — voir NfcHelper.provisionAndLock.",
             style = MaterialTheme.typography.bodySmall,
         )
 
@@ -129,9 +120,9 @@ fun ProvisionScreen(
                                 // dès qu'on le garde en mémoire pendant un appel réseau — on ne
                                 // réutilise donc JAMAIS le tag de ce premier tap pour l'écriture.
                                 // On redemande un second tap, tout frais, immédiatement suivi de
-                                // l'écriture/verrouillage sans plus aucune attente entre les deux.
+                                // l'écriture sans plus aucune attente entre les deux.
                                 statusText = "Salle '$roomName' créée. Approchez À NOUVEAU LE MÊME " +
-                                    "patch pour le verrouiller…"
+                                    "patch pour y écrire le code…"
                                 var tap2Handled = false
                                 listenForTags { freshTag ->
                                     if (tap2Handled) return@listenForTags
@@ -140,16 +131,14 @@ fun ProvisionScreen(
                                         try {
                                             // I/O NFC bas niveau bloquant : hors du thread
                                             // principal pour ne pas déclencher d'ANR.
-                                            val lockResult = withContext(Dispatchers.IO) {
-                                                NfcHelper.provisionAndLock(
-                                                    freshTag, checkpointCode, PROVISION_PASSWORD, PROVISION_PACK,
-                                                )
+                                            val writeResult = withContext(Dispatchers.IO) {
+                                                NfcHelper.writeCheckpointCode(freshTag, checkpointCode)
                                             }
-                                            statusText = when (lockResult) {
+                                            statusText = when (writeResult) {
                                                 is ProvisionResult.Success ->
-                                                    "✔ '$roomName' créée et patch verrouillé (code ${lockResult.checkpointCode.take(8)}…)"
+                                                    "✔ '$roomName' créée, patch écrit (code ${writeResult.checkpointCode.take(8)}…)"
                                                 is ProvisionResult.Failure ->
-                                                    "⚠ Salle créée côté serveur, mais verrouillage du patch échoué : ${lockResult.reason}"
+                                                    "⚠ Salle créée côté serveur, mais écriture du patch échouée : ${writeResult.reason}"
                                             }
                                         } finally {
                                             isBusy = false
@@ -169,51 +158,19 @@ fun ProvisionScreen(
             },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("1. Provisionner (2 taps : création puis verrouillage)")
+            Text("1. Provisionner (2 taps : création puis écriture)")
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-        Text("Vérification du verrouillage", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Tente une écriture SANS mot de passe sur la page protégée d'un patch déjà " +
-                "provisionné : doit être refusée si le verrouillage a fonctionné. Le test " +
-                "restaure automatiquement le patch si jamais l'écriture passe — il ne le " +
-                "corrompt jamais, contrairement à une réécriture NDEF complète.",
+            "Verrouillage physique du patch (R1) : implémenté (NfcHelper.provisionAndLock / " +
+                "testLock) mais désactivé dans cette démo, le temps de fiabiliser son " +
+                "comportement sur l'ensemble du parc de téléphones de test. Risque documenté, " +
+                "non démontré en direct.",
             style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
         )
-        OutlinedButton(
-            enabled = nfcAvailable && !isBusy,
-            onClick = {
-                statusText = "Approchez un patch verrouillé pour tester la réécriture…"
-                isBusy = true
-                // Même raison que le bouton 1 : pas de stopListeningForTags avant utilisation
-                // du tag, juste un verrou local contre les redéclenchements du même tap.
-                var handled = false
-                listenForTags { tag ->
-                    if (handled) return@listenForTags
-                    handled = true
-                    scope.launch {
-                        try {
-                            // I/O NFC bloquant hors du thread principal, pour ne pas déclencher
-                            // d'ANR.
-                            val result = withContext(Dispatchers.IO) { NfcHelper.testLock(tag) }
-                            statusText = when (result) {
-                                is LockTestResult.Locked -> "✔ Écriture refusée par la puce : le verrouillage fonctionne."
-                                is LockTestResult.NotLocked -> "✘ ATTENTION : l'écriture a été ACCEPTÉE — ce patch n'est pas verrouillé."
-                                is LockTestResult.Error -> "⚠ Test impossible : ${result.reason}"
-                            }
-                        } finally {
-                            isBusy = false
-                            stopListeningForTags()
-                        }
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("2. Tester le verrouillage d'un patch")
-        }
 
         if (statusText.isNotBlank()) {
             Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
