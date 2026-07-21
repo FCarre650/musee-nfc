@@ -77,8 +77,15 @@ Si le palier 1 passe entièrement, vous avez déjà un **POC de secours démontr
 
 Ordre important, surtout si vous réutilisez un patch déjà testé plus tôt dans la semaine : le
 serveur refuse de re-provisionner un `tagUid` déjà associé à une salle (`409 Ce patch (UID) est
-déjà associé à une salle`). Pour rejouer ce palier, prenez un **patch physique jamais provisionné**
-(ou effacez la salle correspondante côté admin avant de retenter avec le même patch).
+déjà associé à une salle`), et désactiver la salle (`isActive=false`) ne libère PAS le patch (le
+contrôle porte sur l'UID, pas sur le statut actif). Pour rejouer ce palier avec le même patch
+physique, supprimez d'abord la salle existante :
+```bash
+curl -X DELETE http://localhost:8080/api/checkpoints/<id> -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+`<id>` s'obtient via `GET /api/checkpoints`. Ceci supprime aussi l'historique des scans de cette
+salle (contrainte de clé étrangère) — normal pour un patch de test qu'on reprovisionne, à éviter
+pour une vraie salle en usage. Sinon, prenez simplement un patch physique jamais provisionné.
 
 1. ☐ Se connecter avec `admin`/`admin123`, aller sur l'onglet « Provisionner ».
 2. ☐ Remplir une salle de test, cliquer « Provisionner », approcher un patch **NTAG213 vierge** et

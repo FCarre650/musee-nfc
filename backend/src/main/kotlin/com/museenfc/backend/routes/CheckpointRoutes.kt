@@ -2,6 +2,7 @@ package com.museenfc.backend.routes
 
 import com.museenfc.backend.db.Checkpoints
 import com.museenfc.backend.db.GuardRole
+import com.museenfc.backend.db.Scans
 import com.museenfc.backend.models.CheckpointDto
 import com.museenfc.backend.models.CreateCheckpointRequest
 import com.museenfc.backend.models.ErrorResponse
@@ -13,10 +14,12 @@ import io.ktor.server.application.call
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import org.jetbrains.exposed.sql.and
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insertAndGetId
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -104,6 +107,43 @@ fun Route.checkpointRoutes() {
             call.respond(HttpStatusCode.NotFound, ErrorResponse("Salle introuvable"))
         } else {
             call.respond(rowToDto(updated))
+        }
+    }
+
+    // Supprime la salle ET son patch associé : le tagUid redevient disponible pour un nouveau
+    // provisioning (contrairement à isActive=false, qui ne le libère pas — voir POST ci-dessus).
+    // Utile en test/recette pour reprovisionner un même patch physique ; en prod ce serait plutôt
+    // réservé à un vrai retrait de salle (déménagement, fermeture temporaire, etc.).
+    delete("/checkpoints/{id}") {
+        val caller = call.requireRole(GuardRole.ADMIN) ?: return@delete
+        val id = call.parameters["id"]?.toIntOrNull()
+        if (id == null) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("id invalide"))
+            return@delete
+        }
+
+        val deleted = transaction {
+            val exists = Checkpoints.selectAll()
+                .where { (Checkpoints.id eq id) and (Checkpoints.museumId eq caller.museumId) }
+                .firstOrNull()
+            if (exists == null) {
+                false
+            } else {
+                // L'historique des passages n'a de sens que rattaché à une salle existante :
+                // on le supprime avec elle plutôt que de laisser des scans orphelins (et pour
+                // éviter le rejet par la contrainte de clé étrangère checkpoint_id).
+                Scans.deleteWhere { builder -> builder.run { Scans.checkpointId eq id } }
+                Checkpoints.deleteWhere { builder ->
+                    builder.run { (Checkpoints.id eq id) and (Checkpoints.museumId eq caller.museumId) }
+                }
+                true
+            }
+        }
+
+        if (deleted) {
+            call.respond(HttpStatusCode.NoContent)
+        } else {
+            call.respond(HttpStatusCode.NotFound, ErrorResponse("Salle introuvable"))
         }
     }
 }

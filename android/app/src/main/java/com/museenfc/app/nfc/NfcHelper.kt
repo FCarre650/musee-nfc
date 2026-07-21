@@ -44,6 +44,12 @@ object NfcHelper {
     private const val PWD_PAGE = 0x2B  // page 43 : mot de passe (4 octets)
     private const val PACK_PAGE = 0x2C // page 44 : PACK (2 octets) + RFUI
 
+    // Délai d'attente par échange bas niveau. Le défaut Android (souvent ~600 ms selon les
+    // téléphones) suffit pour un aller-retour isolé, mais provisionAndLock/testLock en enchaînent
+    // plusieurs à la suite : un patch légèrement mal couplé fait alors échouer un échange au
+    // milieu de la séquence. On l'allonge pour tolérer un couplage NFC imparfait.
+    private const val TRANSCEIVE_TIMEOUT_MS = 2000
+
     fun readUid(tag: Tag): String =
         tag.id.joinToString("") { "%02X".format(it) }
 
@@ -87,6 +93,7 @@ object NfcHelper {
             val nfcA = NfcA.get(tag)
                 ?: return ProvisionResult.Failure("Puce non compatible NfcA : verrouillage impossible")
             nfcA.connect()
+            nfcA.timeout = TRANSCEIVE_TIMEOUT_MS
             try {
                 // Ordre important : tant qu'AUTH0 (CFG0) n'a pas été abaissé, les pages de
                 // config restent en écriture libre. On écrit donc PWD/PACK/CFG1 EN PREMIER,
@@ -133,6 +140,7 @@ object NfcHelper {
         val nfcA = NfcA.get(tag) ?: return false
         return try {
             nfcA.connect()
+            nfcA.timeout = TRANSCEIVE_TIMEOUT_MS
             // Commande PWD_AUTH (0x1B) + mot de passe 4 octets -> renvoie 2 octets PACK si succès.
             val response = nfcA.transceive(byteArrayOf(0x1B.toByte()) + password)
             response.size == 2
@@ -159,6 +167,7 @@ object NfcHelper {
         val nfcA = NfcA.get(tag) ?: return LockTestResult.Error("Puce non compatible NfcA")
         return try {
             nfcA.connect()
+            nfcA.timeout = TRANSCEIVE_TIMEOUT_MS
             val original = readPage(nfcA, AUTH0_PAGE)
             val decoy = byteArrayOf(0x53, 0x41, 0x42, 0x00) // valeur de test neutre, jamais persistée
             val writeAccepted = try {
@@ -192,14 +201,28 @@ object NfcHelper {
     private fun writePage(nfcA: NfcA, page: Int, data: ByteArray) {
         require(data.size == 4) { "Une page NTAG21x fait 4 octets" }
         // Commande WRITE (0xA2) : 1 octet commande + 1 octet n° de page + 4 octets de données.
-        nfcA.transceive(byteArrayOf(0xA2.toByte(), page.toByte()) + data)
+        transceiveRetrying(nfcA, byteArrayOf(0xA2.toByte(), page.toByte()) + data)
     }
 
     private fun readPage(nfcA: NfcA, page: Int): ByteArray {
         // Commande READ (0x30) : 1 octet commande + 1 octet n° de page -> renvoie 16 octets
         // (4 pages consécutives) ; on ne garde que les 4 octets de la page demandée.
-        val response = nfcA.transceive(byteArrayOf(0x30.toByte(), page.toByte()))
+        val response = transceiveRetrying(nfcA, byteArrayOf(0x30.toByte(), page.toByte()))
         return response.copyOfRange(0, 4)
+    }
+
+    /**
+     * Un seul réessai en cas d'IOException (bruit/couplage passager) avant d'abandonner : un
+     * TagLostException n'est PAS réessayé, le patch n'étant physiquement plus là, retenter
+     * immédiatement ne peut que renvoyer la même erreur.
+     */
+    private fun transceiveRetrying(nfcA: NfcA, command: ByteArray): ByteArray = try {
+        nfcA.transceive(command)
+    } catch (e: TagLostException) {
+        throw e
+    } catch (e: IOException) {
+        Thread.sleep(80)
+        nfcA.transceive(command)
     }
 
     private fun parseTextRecord(record: NdefRecord): String? {
