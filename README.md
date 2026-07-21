@@ -57,7 +57,9 @@ Avant de lancer sur un téléphone réel :
    votre machine sur le réseau Wi-Fi (ex. `http://192.168.1.42:8080`) — le téléphone et le backend
    doivent être sur le même réseau. `localhost` depuis le téléphone pointerait vers le téléphone
    lui-même.
-2. Un patch NFC (NTAG213/215/216, quelques centimes l'unité) et un téléphone Android avec NFC.
+2. Un patch NFC **NTAG215** (quelques centimes l'unité) et un téléphone Android avec NFC. Le code
+   cible spécifiquement les adresses de pages de config du NTAG215 (`NfcHelper.kt`) ; un NTAG213
+   ou NTAG216 nécessiterait d'adapter ces constantes (voir commentaire en tête de ce fichier).
 
 **Non compilé dans cet environnement.** Le code a été écrit avec soin (conventions Android/Compose
 standards) mais je n'ai pas pu le construire ici : le dépôt Maven de Google

@@ -26,12 +26,14 @@ sealed class LockTestResult {
 /**
  * Toute la logique NFC bas niveau : lecture d'UID/UUID applicatif, écriture au provisioning,
  * et verrouillage par mot de passe (R1 : "verrouiller / protéger par mot de passe après
- * provisioning"). Basé sur les commandes NTAG213/215/216 (famille MIFARE Ultralight EV1),
- * les patchs les plus courants et les moins chers pour ce cas d'usage.
+ * provisioning"). Cible les patchs NXP NTAG215 utilisés pour ce POC (confirmé via NFC Tools :
+ * 135 pages, 540 octets — cf. capture d'écran de recette).
  *
- * Non testé sur puce physique dans cet environnement (pas de device/lecteur NFC disponible
- * ici) : à valider au premier palier NFC réel du plan de test (voir PLAN_TEST_PROGRESSIF.md).
- * Les numéros de page et la disposition des registres viennent de la datasheet NXP NTAG213.
+ * NTAG213/215/216 partagent le même jeu de commandes et la même disposition de registres
+ * (MIRROR/RFUI/MIRROR_PAGE/AUTH0 puis ACCESS/RFUI×3 puis PWD puis PACK), mais PAS les mêmes
+ * numéros de page : ces 4 dernières pages de la puce dépendent de sa taille mémoire. Si vous
+ * changez de référence de patch, les 4 constantes CFG0/CFG1/PWD/PACK_PAGE ci-dessous doivent
+ * être adaptées (NTAG213 : 0x29/0x2A/0x2B/0x2C ; NTAG216 : 0xE3/0xE4/0xE5/0xE6).
  */
 object NfcHelper {
 
@@ -39,10 +41,10 @@ object NfcHelper {
     // Nos messages NDEF (petit texte, l'UUID checkpointCode) tiennent largement avant la page 12 ;
     // AUTH0 = page à partir de laquelle l'authentification est exigée pour ÉCRIRE.
     private const val AUTH0_PAGE = 12
-    private const val CFG0_PAGE = 0x29 // page 41 : MIRROR / RFUI / MIRROR_PAGE / AUTH0
-    private const val CFG1_PAGE = 0x2A // page 42 : ACCESS (PROT, CFGLCK, AUTHLIM) / RFUI x3
-    private const val PWD_PAGE = 0x2B  // page 43 : mot de passe (4 octets)
-    private const val PACK_PAGE = 0x2C // page 44 : PACK (2 octets) + RFUI
+    private const val CFG0_PAGE = 0x83 // page 131 (NTAG215) : MIRROR / RFUI / MIRROR_PAGE / AUTH0
+    private const val CFG1_PAGE = 0x84 // page 132 (NTAG215) : ACCESS (PROT, CFGLCK, AUTHLIM) / RFUI x3
+    private const val PWD_PAGE = 0x85  // page 133 (NTAG215) : mot de passe (4 octets)
+    private const val PACK_PAGE = 0x86 // page 134 (NTAG215) : PACK (2 octets) + RFUI
 
     // Délai d'attente par échange bas niveau. Le défaut Android (souvent ~600 ms selon les
     // téléphones) suffit pour un aller-retour isolé, mais provisionAndLock/testLock en enchaînent
@@ -205,9 +207,15 @@ object NfcHelper {
     }
 
     private fun readPage(nfcA: NfcA, page: Int): ByteArray {
-        // Commande READ (0x30) : 1 octet commande + 1 octet n° de page -> renvoie 16 octets
-        // (4 pages consécutives) ; on ne garde que les 4 octets de la page demandée.
+        // Commande READ (0x30) : 1 octet commande + 1 octet n° de page -> renvoie normalement
+        // 16 octets (4 pages consécutives) ; on ne garde que les 4 octets de la page demandée.
         val response = transceiveRetrying(nfcA, byteArrayOf(0x30.toByte(), page.toByte()))
+        // Une réponse plus courte que prévu (NAK renvoyé comme donnée au lieu d'une exception,
+        // selon le contrôleur NFC du téléphone) ne doit pas planter l'appli avec une
+        // IndexOutOfBoundsException non rattrapée : on la traite comme un échec de lecture normal.
+        if (response.size < 4) {
+            throw IOException("Réponse de la puce trop courte (${response.size} octet(s)) pour la page $page")
+        }
         return response.copyOfRange(0, 4)
     }
 

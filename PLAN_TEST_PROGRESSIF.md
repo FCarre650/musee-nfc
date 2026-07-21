@@ -88,7 +88,7 @@ salle (contrainte de clé étrangère) — normal pour un patch de test qu'on re
 pour une vraie salle en usage. Sinon, prenez simplement un patch physique jamais provisionné.
 
 1. ☐ Se connecter avec `admin`/`admin123`, aller sur l'onglet « Provisionner ».
-2. ☐ Remplir une salle de test, cliquer « Provisionner », approcher un patch **NTAG213 vierge** et
+2. ☐ Remplir une salle de test, cliquer « Provisionner », approcher un patch **NTAG215 vierge** et
    le maintenir immobile jusqu'à ce que le statut affiche un résultat (succès ou échec explicite :
    l'app confirme désormais le verrouillage par relecture de la puce avant d'annoncer un succès,
    donc un message de succès veut vraiment dire que le patch est verrouillé).
@@ -103,7 +103,7 @@ pour une vraie salle en usage. Sinon, prenez simplement un patch physique jamais
    reprovisionner.
    *Si ce test échoue (écriture acceptée) de façon répétée sur un patch dont l'étape 2 a confirmé
    le verrouillage, vérifiez `NfcHelper.provisionAndLock`/`testLock` : c'est le point du code le
-   plus délicat (registres CFG0/CFG1/PWD/PACK NTAG213) et le seul qui n'a pas pu être vérifié sur
+   plus délicat (registres CFG0/CFG1/PWD/PACK NTAG215) et le seul qui n'a pas pu être vérifié sur
    puce physique pendant la génération de ce projet.*
 
 ## Palier 5 — Tranche verticale complète avec un vrai patch (É2, bout en bout)
