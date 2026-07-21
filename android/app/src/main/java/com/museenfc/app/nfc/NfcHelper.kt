@@ -130,6 +130,11 @@ object NfcHelper {
             ProvisionResult.Failure("Format NDEF refusé par la puce")
         } catch (e: IOException) {
             ProvisionResult.Failure("Écriture refusée par la puce (déjà verrouillée ?)")
+        } catch (e: SecurityException) {
+            // "Tag is out of date" : le Tag Android a été gardé trop longtemps sans I/O (ex.
+            // attente réseau) et le système en a révoqué l'accès. Non rattrapée, cette exception
+            // plantait l'appli. On demande de retaper plutôt que de crasher.
+            ProvisionResult.Failure("Le patch n'était plus valide (retiré/reposé trop tard), réessayez")
         }
     }
 
@@ -195,6 +200,8 @@ object NfcHelper {
             LockTestResult.Error("Patch retiré pendant le test, réessayez")
         } catch (e: IOException) {
             LockTestResult.Error("Erreur de communication avec la puce, réessayez")
+        } catch (e: SecurityException) {
+            LockTestResult.Error("Le patch n'était plus valide (retiré/reposé trop tard), réessayez")
         } finally {
             runCatching { nfcA.close() }
         }

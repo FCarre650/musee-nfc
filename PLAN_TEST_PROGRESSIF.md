@@ -88,10 +88,14 @@ salle (contrainte de clé étrangère) — normal pour un patch de test qu'on re
 pour une vraie salle en usage. Sinon, prenez simplement un patch physique jamais provisionné.
 
 1. ☐ Se connecter avec `admin`/`admin123`, aller sur l'onglet « Provisionner ».
-2. ☐ Remplir une salle de test, cliquer « Provisionner », approcher un patch **NTAG215 vierge** et
-   le maintenir immobile jusqu'à ce que le statut affiche un résultat (succès ou échec explicite :
-   l'app confirme désormais le verrouillage par relecture de la puce avant d'annoncer un succès,
-   donc un message de succès veut vraiment dire que le patch est verrouillé).
+2. ☐ Remplir une salle de test, cliquer « Provisionner », approcher un patch **NTAG215 vierge**
+   (1er tap : lecture de l'UID puis création de la salle côté serveur). **Dès que le statut
+   demande de réapprocher le patch, retirez-le puis re-tapez** (2e tap : écriture + verrouillage) —
+   ne le laissez pas posé en continu entre les deux, ce sont deux taps distincts. C'est volontaire :
+   un objet Tag Android devient invalide s'il est gardé en mémoire pendant l'appel réseau du 1er
+   tap, d'où la nécessité d'un second tap tout frais pour l'écriture. L'app confirme le
+   verrouillage par relecture de la puce avant d'annoncer un succès, donc un message de succès
+   veut vraiment dire que le patch est verrouillé.
 3. ☐ Vérifier côté supervision web que la salle apparaît dans la liste (`GET /api/checkpoints`
    ou re-render du snapshot) — ceci est vrai dès l'étape 2 même si le verrouillage NFC a échoué,
    puisque la salle est créée côté serveur avant l'écriture sur le patch : ne pas le prendre comme

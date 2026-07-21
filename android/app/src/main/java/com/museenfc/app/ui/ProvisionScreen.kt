@@ -104,49 +104,60 @@ fun ProvisionScreen(
                 statusText = "Approchez le patch neuf du téléphone…"
                 isBusy = true
                 listenForTags { tag ->
-                    // Capture unique : on coupe l'écoute tout de suite. Le provisioning prend
-                    // plusieurs centaines de ms (réseau + plusieurs écritures NFC) ; si on
-                    // laissait l'écoute active, le même tap prolongé redéclenchait ce callback
-                    // en double pendant que le premier traitement tournait encore, avec deux
-                    // accès concurrents à la puce — cause des échecs de verrouillage aléatoires.
+                    // Capture unique : on coupe l'écoute tout de suite pour éviter un
+                    // redéclenchement en double pendant que ce tap est encore traité.
                     stopListeningForTags()
                     val uid = NfcHelper.readUid(tag)
                     scope.launch {
-                        try {
-                            statusText = "UID $uid lu, création côté serveur…"
-                            when (
-                                val outcome = app.checkpointRepository.create(
-                                    session, uid, roomName, zone.ifBlank { null }, threshold,
-                                )
-                            ) {
-                                is CheckpointOutcome.Success -> {
-                                    statusText = "Salle créée, verrouillage du patch en cours…"
-                                    // I/O NFC bas niveau bloquant (plusieurs échanges, jusqu'à
-                                    // quelques secondes en cas de mauvais couplage) : hors du
-                                    // thread principal pour ne pas déclencher d'ANR.
-                                    val lockResult = withContext(Dispatchers.IO) {
-                                        NfcHelper.provisionAndLock(
-                                            tag, outcome.checkpoint.checkpointCode, PROVISION_PASSWORD, PROVISION_PACK,
-                                        )
-                                    }
-                                    statusText = when (lockResult) {
-                                        is ProvisionResult.Success ->
-                                            "✔ '$roomName' créée et patch verrouillé (code ${lockResult.checkpointCode.take(8)}…)"
-                                        is ProvisionResult.Failure ->
-                                            "⚠ Salle créée côté serveur, mais verrouillage du patch échoué : ${lockResult.reason}"
+                        statusText = "UID $uid lu, création côté serveur…"
+                        when (
+                            val outcome = app.checkpointRepository.create(
+                                session, uid, roomName, zone.ifBlank { null }, threshold,
+                            )
+                        ) {
+                            is CheckpointOutcome.Success -> {
+                                val checkpointCode = outcome.checkpoint.checkpointCode
+                                // Un objet Tag Android devient invalide ("Tag is out of date")
+                                // dès qu'on le garde en mémoire pendant un appel réseau — on ne
+                                // réutilise donc JAMAIS le tag de ce premier tap pour l'écriture.
+                                // On redemande un second tap, tout frais, immédiatement suivi de
+                                // l'écriture/verrouillage sans plus aucune attente entre les deux.
+                                statusText = "Salle '$roomName' créée. Approchez À NOUVEAU LE MÊME " +
+                                    "patch pour le verrouiller…"
+                                listenForTags { freshTag ->
+                                    stopListeningForTags()
+                                    scope.launch {
+                                        try {
+                                            // I/O NFC bas niveau bloquant : hors du thread
+                                            // principal pour ne pas déclencher d'ANR.
+                                            val lockResult = withContext(Dispatchers.IO) {
+                                                NfcHelper.provisionAndLock(
+                                                    freshTag, checkpointCode, PROVISION_PASSWORD, PROVISION_PACK,
+                                                )
+                                            }
+                                            statusText = when (lockResult) {
+                                                is ProvisionResult.Success ->
+                                                    "✔ '$roomName' créée et patch verrouillé (code ${lockResult.checkpointCode.take(8)}…)"
+                                                is ProvisionResult.Failure ->
+                                                    "⚠ Salle créée côté serveur, mais verrouillage du patch échoué : ${lockResult.reason}"
+                                            }
+                                        } finally {
+                                            isBusy = false
+                                        }
                                     }
                                 }
-                                is CheckpointOutcome.Failure -> statusText = "✘ ${outcome.message}"
                             }
-                        } finally {
-                            isBusy = false
+                            is CheckpointOutcome.Failure -> {
+                                statusText = "✘ ${outcome.message}"
+                                isBusy = false
+                            }
                         }
                     }
                 }
             },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("1. Provisionner (approcher le patch après ce clic)")
+            Text("1. Provisionner (2 taps : création puis verrouillage)")
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
