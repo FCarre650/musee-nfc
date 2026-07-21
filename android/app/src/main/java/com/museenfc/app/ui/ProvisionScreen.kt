@@ -103,10 +103,18 @@ fun ProvisionScreen(
                 val threshold = thresholdText.toIntOrNull() ?: 60
                 statusText = "Approchez le patch neuf du téléphone…"
                 isBusy = true
+                // Verrou local (pas stopListeningForTags ici) : sur certains téléphones
+                // (Xiaomi/MIUI constaté), désactiver le mode lecteur NFC est un appel bloquant
+                // qui peut prendre plusieurs secondes. L'appeler AVANT d'utiliser le tag qu'on
+                // vient de capturer laissait le temps à Android d'invalider la référence
+                // ("Tag is out of date"), recréant le même problème que l'appel réseau. On
+                // ignore donc juste les redéclenchements du même tap avec un simple booléen,
+                // et on ne coupe l'écoute qu'une fois le résultat obtenu, quand la lenteur
+                // éventuelle de cet appel ne coûte plus rien.
+                var tap1Handled = false
                 listenForTags { tag ->
-                    // Capture unique : on coupe l'écoute tout de suite pour éviter un
-                    // redéclenchement en double pendant que ce tap est encore traité.
-                    stopListeningForTags()
+                    if (tap1Handled) return@listenForTags
+                    tap1Handled = true
                     val uid = NfcHelper.readUid(tag)
                     scope.launch {
                         statusText = "UID $uid lu, création côté serveur…"
@@ -124,8 +132,10 @@ fun ProvisionScreen(
                                 // l'écriture/verrouillage sans plus aucune attente entre les deux.
                                 statusText = "Salle '$roomName' créée. Approchez À NOUVEAU LE MÊME " +
                                     "patch pour le verrouiller…"
+                                var tap2Handled = false
                                 listenForTags { freshTag ->
-                                    stopListeningForTags()
+                                    if (tap2Handled) return@listenForTags
+                                    tap2Handled = true
                                     scope.launch {
                                         try {
                                             // I/O NFC bas niveau bloquant : hors du thread
@@ -143,6 +153,7 @@ fun ProvisionScreen(
                                             }
                                         } finally {
                                             isBusy = false
+                                            stopListeningForTags()
                                         }
                                     }
                                 }
@@ -150,6 +161,7 @@ fun ProvisionScreen(
                             is CheckpointOutcome.Failure -> {
                                 statusText = "✘ ${outcome.message}"
                                 isBusy = false
+                                stopListeningForTags()
                             }
                         }
                     }
@@ -175,18 +187,26 @@ fun ProvisionScreen(
             onClick = {
                 statusText = "Approchez un patch verrouillé pour tester la réécriture…"
                 isBusy = true
+                // Même raison que le bouton 1 : pas de stopListeningForTags avant utilisation
+                // du tag, juste un verrou local contre les redéclenchements du même tap.
+                var handled = false
                 listenForTags { tag ->
-                    stopListeningForTags() // capture unique, même raison que le bouton 1
+                    if (handled) return@listenForTags
+                    handled = true
                     scope.launch {
-                        // Même raison que provisionAndLock : I/O NFC bloquant hors du thread
-                        // principal, pour ne pas déclencher d'ANR.
-                        val result = withContext(Dispatchers.IO) { NfcHelper.testLock(tag) }
-                        statusText = when (result) {
-                            is LockTestResult.Locked -> "✔ Écriture refusée par la puce : le verrouillage fonctionne."
-                            is LockTestResult.NotLocked -> "✘ ATTENTION : l'écriture a été ACCEPTÉE — ce patch n'est pas verrouillé."
-                            is LockTestResult.Error -> "⚠ Test impossible : ${result.reason}"
+                        try {
+                            // I/O NFC bloquant hors du thread principal, pour ne pas déclencher
+                            // d'ANR.
+                            val result = withContext(Dispatchers.IO) { NfcHelper.testLock(tag) }
+                            statusText = when (result) {
+                                is LockTestResult.Locked -> "✔ Écriture refusée par la puce : le verrouillage fonctionne."
+                                is LockTestResult.NotLocked -> "✘ ATTENTION : l'écriture a été ACCEPTÉE — ce patch n'est pas verrouillé."
+                                is LockTestResult.Error -> "⚠ Test impossible : ${result.reason}"
+                            }
+                        } finally {
+                            isBusy = false
+                            stopListeningForTags()
                         }
-                        isBusy = false
                     }
                 }
             },
