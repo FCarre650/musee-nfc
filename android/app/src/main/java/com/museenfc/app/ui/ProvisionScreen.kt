@@ -30,7 +30,9 @@ import com.museenfc.app.network.Session
 import com.museenfc.app.nfc.LockTestResult
 import com.museenfc.app.nfc.NfcHelper
 import com.museenfc.app.nfc.ProvisionResult
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Mot de passe de provisioning : identique pour tous les patchs dans ce POC, embarqué dans
@@ -118,9 +120,15 @@ fun ProvisionScreen(
                                 )
                             ) {
                                 is CheckpointOutcome.Success -> {
-                                    val lockResult = NfcHelper.provisionAndLock(
-                                        tag, outcome.checkpoint.checkpointCode, PROVISION_PASSWORD, PROVISION_PACK,
-                                    )
+                                    statusText = "Salle créée, verrouillage du patch en cours…"
+                                    // I/O NFC bas niveau bloquant (plusieurs échanges, jusqu'à
+                                    // quelques secondes en cas de mauvais couplage) : hors du
+                                    // thread principal pour ne pas déclencher d'ANR.
+                                    val lockResult = withContext(Dispatchers.IO) {
+                                        NfcHelper.provisionAndLock(
+                                            tag, outcome.checkpoint.checkpointCode, PROVISION_PASSWORD, PROVISION_PACK,
+                                        )
+                                    }
                                     statusText = when (lockResult) {
                                         is ProvisionResult.Success ->
                                             "✔ '$roomName' créée et patch verrouillé (code ${lockResult.checkpointCode.take(8)}…)"
@@ -158,13 +166,17 @@ fun ProvisionScreen(
                 isBusy = true
                 listenForTags { tag ->
                     stopListeningForTags() // capture unique, même raison que le bouton 1
-                    val result = NfcHelper.testLock(tag)
-                    statusText = when (result) {
-                        is LockTestResult.Locked -> "✔ Écriture refusée par la puce : le verrouillage fonctionne."
-                        is LockTestResult.NotLocked -> "✘ ATTENTION : l'écriture a été ACCEPTÉE — ce patch n'est pas verrouillé."
-                        is LockTestResult.Error -> "⚠ Test impossible : ${result.reason}"
+                    scope.launch {
+                        // Même raison que provisionAndLock : I/O NFC bloquant hors du thread
+                        // principal, pour ne pas déclencher d'ANR.
+                        val result = withContext(Dispatchers.IO) { NfcHelper.testLock(tag) }
+                        statusText = when (result) {
+                            is LockTestResult.Locked -> "✔ Écriture refusée par la puce : le verrouillage fonctionne."
+                            is LockTestResult.NotLocked -> "✘ ATTENTION : l'écriture a été ACCEPTÉE — ce patch n'est pas verrouillé."
+                            is LockTestResult.Error -> "⚠ Test impossible : ${result.reason}"
+                        }
+                        isBusy = false
                     }
-                    isBusy = false
                 }
             },
             modifier = Modifier.fillMaxWidth(),
