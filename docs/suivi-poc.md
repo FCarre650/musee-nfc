@@ -70,6 +70,17 @@ lenteur sur MIUI). Décision à prendre : réactiver (un seul point d'appel à c
 `ProvisionScreen`) ou assumer un pitch « documenté, non démontré en live » pour R1. C'est le sujet
 de sécurité le plus attendu par ce client (« entreprise de sécurité ») — voir priorité en §4.
 
+### 3.4 Patch physique orphelin après suppression d'une salle
+`DELETE /api/checkpoints/{id}` supprime la salle et son historique côté serveur, mais **le patch
+physique garde le `checkpointCode` écrit dessus** — rien ne l'efface sur la puce elle-même. Ce
+code devient inerte (un scan renverrait 404, plus aucune salle n'y correspond côté serveur) : ce
+n'est donc pas une brèche de sécurité, plutôt un residu à nettoyer avant de réutiliser le patch
+pour autre chose. Aujourd'hui, seul un outil NFC externe (hors app) permet de le blanchir.
+Décision à prendre, couplée à R1 (§3.3) : une action « effacer/reprovisionner ce patch » dans
+l'app toucherait à `NfcHelper` de la même façon qu'un futur déverrouillage — les traiter ensemble
+plutôt que d'ajouter une écriture NFC de plus isolément. Proposition : assumer la limite pour la
+démo (mentionnée à l'oral), la reprendre seulement si R1 est réactivé.
+
 ## 4. Bugs signalés précédemment — statut vérifié dans le code actuel
 
 | Bug signalé | Statut sur `fix/nfc-provisioning-reliability` |
@@ -78,6 +89,7 @@ de sécurité le plus attendu par ce client (« entreprise de sécurité ») —
 | On ne voit pas le nom de la salle sur le tag | Non revérifié dans le code par cette analyse — à valider en test physique (Palier 4/5 du plan de test). |
 | Erreur au nouveau scan | Probablement couvert par les 3 fixes de la branche (`crash Tag invalidé`, `stopListeningForTags` MIUI, `mauvaise puce ciblée`) mais à reconfirmer en test physique, pas de test automatisé pour ce cas. |
 | Seuil d'alerte modifiable en ligne de commande mais pas via WebSocket | **Corrigé.** `PATCH` et `DELETE /api/checkpoints/{id}` déclenchent maintenant `SupervisionHub.broadcast(...)`, comme `POST /api/scans`. Vérifié avec un client WebSocket réel : la supervision reçoit bien le nouvel état sans reload. |
+| Contraste : certains titres illisibles | **Corrigé.** `LoginScreen` s'affichait avant tout `Scaffold` (c'est le tout premier écran de l'app), donc son texte héritait de la couleur de contenu par défaut de Compose (noir) au lieu de celle du thème, invisible sur le fond `@color/ink` posé au niveau de la fenêtre Android. Ajout d'une `Surface` racine dans `MainActivity.kt` qui applique le thème dès le premier écran. Les autres écrans (déjà dans un `Scaffold`) n'étaient pas concernés. |
 
 ## 5. Reste à faire pour le POC (Must Have + Should Have retenus) — par ordre de priorité
 
@@ -137,6 +149,44 @@ bug en démo).
 6. Synchronisation avec la gestion des plannings de gardiens (affectations, congés).
 7. Formation approfondie des gardiens au-delà d'une session initiale (accompagnement au
    déploiement, hors développement).
+
+## 7. Angles morts de sécurité — liste précise pour la fin du POC
+
+Reprise du tableau de risques du cadrage (§3, R1-R12) à l'aune de l'état réel du code, pour
+trancher précisément quoi coder cette semaine vs quoi présenter comme anticipé à l'oral.
+
+### Concrètement implémentable avant la fin du POC (faible effort, gain démo/sécurité réel)
+- **R1 — verrouillage du patch** : le code existe déjà (`provisionAndLock`/`testLock`), juste
+  désactivé côté UI. Réactivation = un point d'appel à changer dans `ProvisionScreen` + tests
+  terrain. C'est le seul item de cette liste qui demande un vrai arbitrage temps/risque (voir §3.3
+  et la question posée en fin de message).
+- **R7 — signaler un patch HS/anomalie** : le champ `status` (`OK`/`ANOMALY`) existe déjà côté
+  modèle et route (`ScanRoutes.kt`) ; il manque juste un bouton dans `ScanScreen` pour l'envoyer.
+  Petit ajout, répond directement à la question client « patch arraché/détruit ».
+- **R5 — heuristique anti-téléportation (nouveau, pas dans le cadrage initial)** : sans matériel
+  supplémentaire (pas de BLE/Wi-Fi de salle), on peut détecter un cas grossier de scan à distance
+  bon marché : si le même gardien scanne deux salles éloignées en moins de X secondes, c'est
+  physiquement impossible. Simple règle serveur sur `guardId` + `receivedAt` + salles distinctes.
+  Ne remplace pas un vrai recoupement de présence, mais coûte peu et se démontre facilement.
+
+### Anticipé et documenté seulement (à assumer clairement à l'oral, pas de code prévu)
+- **R3/R4 — anti-clonage et anti-rejeu cryptographiques réels** : nécessite des tags NTAG 424 DNA
+  + SUN (message signé AES, compteur anti-rejeu), donc un autre matériel que nos NTAG215. Hors
+  portée d'une semaine, indépendamment du temps — c'est une contrainte matérielle, pas un choix.
+- **R5 — recoupement de présence par balise** (au-delà de l'heuristique ci-dessus) : BLE/Wi-Fi
+  de salle, nécessite du matériel et une vraie campagne de test en musée.
+- **R9 — TLS pinning, détection de root, MDM** : le POC tourne en HTTP sur réseau local (limite
+  déjà assumée dans le README) ; ces protections ont du sens en production, pas sur un POC d'une
+  semaine testé sur un seul réseau Wi-Fi contrôlé.
+- **R10 — chiffrement au repos de la base** : H2 fichier local non chiffré. Les mots de passe le
+  sont (BCrypt), c'est le point qui compte pour la démo ; le chiffrement de la base elle-même est
+  une bascule d'infra (production), pas un développement.
+- **R11 — RGPD/CSE** : question juridique/organisationnelle (base légale, durée de conservation,
+  consultation du CSE), pas technique — se traite dans l'offre commerciale, jamais dans le code.
+- **R12 — redondance/disponibilité serveur** : une seule instance en POC ; la stratégie de
+  scalabilité (multi-instance + Redis pub/sub pour le WebSocket) est documentée au cadrage §4 ;
+  pas besoin de l'implémenter pour convaincre sur un POC mono-musée.
+- **Patch orphelin après suppression d'une salle (§3.4)** : voir décision couplée à R1 ci-dessus.
 
 ---
 

@@ -7,10 +7,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -76,74 +79,80 @@ private fun MuseeApp(app: MuseeNfcApp, nfcAvailable: Boolean, activity: MainActi
     var session by remember { mutableStateOf<Session?>(app.authRepository.currentSession()) }
     var screen by remember { mutableStateOf(Screen.SCAN) }
 
-    val current = session
-    if (current == null) {
-        LoginScreen(
-            authRepository = app.authRepository,
-            onLoggedIn = { session = it },
-        )
-        return
-    }
+    // Surface racine : Scaffold en fournit une en interne une fois connecté, mais LoginScreen
+    // s'affiche avant tout Scaffold. Sans cette Surface, son texte hérite de la couleur de
+    // contenu par défaut de Compose (noir) au lieu de celle du thème — invisible sur notre fond
+    // sombre (@color/ink posé au niveau de la fenêtre Android). D'où les titres illisibles.
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        val current = session
+        if (current == null) {
+            LoginScreen(
+                authRepository = app.authRepository,
+                onLoggedIn = { session = it },
+            )
+            return@Surface
+        }
 
-    val isSupervisorOrAbove = current.role == "SUPERVISOR" || current.role == "ADMIN"
-    val isAdmin = current.role == "ADMIN"
+        val isSupervisorOrAbove = current.role == "SUPERVISOR" || current.role == "ADMIN"
+        val isAdmin = current.role == "ADMIN"
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = screen == Screen.SCAN,
-                    onClick = { screen = Screen.SCAN },
-                    icon = {},
-                    label = { Text("Scanner") },
-                )
-                if (isAdmin) {
+        Scaffold(
+            bottomBar = {
+                NavigationBar {
                     NavigationBarItem(
-                        selected = screen == Screen.ROOMS,
-                        onClick = { screen = Screen.ROOMS },
+                        selected = screen == Screen.SCAN,
+                        onClick = { screen = Screen.SCAN },
                         icon = {},
-                        label = { Text("Salles") },
+                        label = { Text("Scanner") },
                     )
-                    NavigationBarItem(
-                        selected = screen == Screen.GUARDS,
-                        onClick = { screen = Screen.GUARDS },
-                        icon = {},
-                        label = { Text("Comptes") },
-                    )
+                    if (isAdmin) {
+                        NavigationBarItem(
+                            selected = screen == Screen.ROOMS,
+                            onClick = { screen = Screen.ROOMS },
+                            icon = {},
+                            label = { Text("Salles") },
+                        )
+                        NavigationBarItem(
+                            selected = screen == Screen.GUARDS,
+                            onClick = { screen = Screen.GUARDS },
+                            icon = {},
+                            label = { Text("Comptes") },
+                        )
+                    }
+                    if (isSupervisorOrAbove) {
+                        NavigationBarItem(
+                            selected = screen == Screen.HISTORY,
+                            onClick = { screen = Screen.HISTORY },
+                            icon = {},
+                            label = { Text("Historique") },
+                        )
+                    }
                 }
-                if (isSupervisorOrAbove) {
-                    NavigationBarItem(
-                        selected = screen == Screen.HISTORY,
-                        onClick = { screen = Screen.HISTORY },
-                        icon = {},
-                        label = { Text("Historique") },
+            },
+        ) { padding ->
+            Box(modifier = Modifier.padding(padding)) {
+                when (screen) {
+                    Screen.SCAN -> ScanScreen(
+                        app = app,
+                        session = current,
+                        nfcAvailable = nfcAvailable,
+                        listenForTags = activity::listenForTags,
+                        stopListeningForTags = activity::stopListeningForTags,
+                        onLogout = {
+                            app.authRepository.logout()
+                            session = null
+                        },
                     )
+                    Screen.ROOMS -> RoomsScreen(
+                        app = app,
+                        session = current,
+                        nfcAvailable = nfcAvailable,
+                        listenForTags = activity::listenForTags,
+                        stopListeningForTags = activity::stopListeningForTags,
+                    )
+                    Screen.GUARDS -> GuardsScreen(app = app, session = current)
+                    Screen.HISTORY -> HistoryScreen(app = app, session = current)
                 }
-            }
-        },
-    ) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
-            when (screen) {
-                Screen.SCAN -> ScanScreen(
-                    app = app,
-                    session = current,
-                    nfcAvailable = nfcAvailable,
-                    listenForTags = activity::listenForTags,
-                    stopListeningForTags = activity::stopListeningForTags,
-                    onLogout = {
-                        app.authRepository.logout()
-                        session = null
-                    },
-                )
-                Screen.ROOMS -> RoomsScreen(
-                    app = app,
-                    session = current,
-                    nfcAvailable = nfcAvailable,
-                    listenForTags = activity::listenForTags,
-                    stopListeningForTags = activity::stopListeningForTags,
-                )
-                Screen.GUARDS -> GuardsScreen(app = app, session = current)
-                Screen.HISTORY -> HistoryScreen(app = app, session = current)
             }
         }
     }
