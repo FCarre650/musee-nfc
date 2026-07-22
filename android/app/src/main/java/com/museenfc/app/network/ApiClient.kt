@@ -59,7 +59,7 @@ class MuseeApi(private val baseUrl: String) {
     }
 
     // Réponses sans corps (204 No Content) : décoder du JSON vide échouerait avec `handle`.
-    private suspend fun handleNoContent(block: () -> HttpResponse): ApiResult<Unit> = try {
+    private suspend inline fun handleNoContent(block: () -> HttpResponse): ApiResult<Unit> = try {
         val response = block()
         if (response.status.isSuccess()) {
             ApiResult.Success(Unit)
