@@ -31,6 +31,15 @@ data class GuardDto(
 )
 
 @Serializable
+data class CreateGuardRequest(
+    val fullName: String,
+    val badgeNumber: String,
+    val login: String,
+    val password: String,
+    val role: String,
+)
+
+@Serializable
 data class CheckpointDto(
     val id: Int,
     val tagUid: String,

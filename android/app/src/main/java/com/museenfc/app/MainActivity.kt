@@ -19,13 +19,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.museenfc.app.network.Session
+import com.museenfc.app.ui.GuardsScreen
 import com.museenfc.app.ui.HistoryScreen
 import com.museenfc.app.ui.LoginScreen
-import com.museenfc.app.ui.ProvisionScreen
+import com.museenfc.app.ui.RoomsScreen
 import com.museenfc.app.ui.ScanScreen
 import com.museenfc.app.ui.theme.MuseeNfcTheme
 
-private enum class Screen { SCAN, PROVISION, HISTORY }
+private enum class Screen { SCAN, ROOMS, GUARDS, HISTORY }
 
 class MainActivity : ComponentActivity() {
 
@@ -98,10 +99,16 @@ private fun MuseeApp(app: MuseeNfcApp, nfcAvailable: Boolean, activity: MainActi
                 )
                 if (isAdmin) {
                     NavigationBarItem(
-                        selected = screen == Screen.PROVISION,
-                        onClick = { screen = Screen.PROVISION },
+                        selected = screen == Screen.ROOMS,
+                        onClick = { screen = Screen.ROOMS },
                         icon = {},
-                        label = { Text("Provisionner") },
+                        label = { Text("Salles") },
+                    )
+                    NavigationBarItem(
+                        selected = screen == Screen.GUARDS,
+                        onClick = { screen = Screen.GUARDS },
+                        icon = {},
+                        label = { Text("Comptes") },
                     )
                 }
                 if (isSupervisorOrAbove) {
@@ -128,13 +135,14 @@ private fun MuseeApp(app: MuseeNfcApp, nfcAvailable: Boolean, activity: MainActi
                         session = null
                     },
                 )
-                Screen.PROVISION -> ProvisionScreen(
+                Screen.ROOMS -> RoomsScreen(
                     app = app,
                     session = current,
                     nfcAvailable = nfcAvailable,
                     listenForTags = activity::listenForTags,
                     stopListeningForTags = activity::stopListeningForTags,
                 )
+                Screen.GUARDS -> GuardsScreen(app = app, session = current)
                 Screen.HISTORY -> HistoryScreen(app = app, session = current)
             }
         }

@@ -52,6 +52,14 @@ options pour vous :
 Ouvrez `android/` dans **Android Studio** (`File > Open`). Le projet utilise Kotlin 2.0.21, AGP
 8.5.2, Compose et KSP — Android Studio les résout automatiquement au premier sync.
 
+Deux onglets réservés à la direction (`ADMIN`) permettent de gérer le POC sans passer par `curl` :
+- **Salles** : liste des salles existantes (modifier nom/zone/seuil d'alerte/statut actif,
+  supprimer — supprime aussi l'historique de la salle), et provisionnement d'un nouveau patch
+  (inchangé, cf. section Sécurité ci-dessous).
+- **Comptes** : création de comptes gardiens (nom, badge, identifiant, mot de passe, rôle) et
+  suppression. La suppression est refusée si le compte a déjà des passages enregistrés — l'audit
+  des rondes ne doit pas dépendre de la survie d'un compte gardien.
+
 Avant de lancer sur un téléphone réel :
 1. Dans `android/app/build.gradle.kts`, remplacez `BASE_URL` (bloc `buildTypes.debug`) par l'IP de
    votre machine sur le réseau Wi-Fi (ex. `http://192.168.1.42:8080`) — le téléphone et le backend

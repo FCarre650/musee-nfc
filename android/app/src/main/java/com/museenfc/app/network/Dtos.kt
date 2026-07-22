@@ -38,6 +38,15 @@ data class ScanResponse(
 )
 
 @Serializable
+data class CreateGuardRequest(
+    val fullName: String,
+    val badgeNumber: String,
+    val login: String,
+    val password: String,
+    val role: String,
+)
+
+@Serializable
 data class CheckpointDto(
     val id: Int,
     val tagUid: String,
@@ -57,7 +66,12 @@ data class CreateCheckpointRequest(
 )
 
 @Serializable
-data class UpdateCheckpointRequest(val alertThresholdMin: Int)
+data class UpdateCheckpointRequest(
+    val roomName: String? = null,
+    val zone: String? = null,
+    val alertThresholdMin: Int? = null,
+    val isActive: Boolean? = null,
+)
 
 @Serializable
 data class ScanHistoryItem(

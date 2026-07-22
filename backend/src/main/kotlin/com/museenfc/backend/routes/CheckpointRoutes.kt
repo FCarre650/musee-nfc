@@ -9,6 +9,8 @@ import com.museenfc.backend.models.ErrorResponse
 import com.museenfc.backend.models.UpdateCheckpointRequest
 import com.museenfc.backend.security.caller
 import com.museenfc.backend.security.requireRole
+import com.museenfc.backend.service.SupervisionService
+import com.museenfc.backend.ws.SupervisionHub
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.request.receive
@@ -106,6 +108,10 @@ fun Route.checkpointRoutes() {
         if (updated == null) {
             call.respond(HttpStatusCode.NotFound, ErrorResponse("Salle introuvable"))
         } else {
+            // Sans ce broadcast, un seuil ou un statut modifié depuis l'admin n'apparaît sur
+            // l'écran de supervision qu'au prochain scan ou à un rechargement manuel — contraire
+            // au Must Have "mise à jour sans action manuelle".
+            SupervisionHub.broadcast(SupervisionService.snapshot(caller.museumId))
             call.respond(rowToDto(updated))
         }
     }
@@ -141,6 +147,7 @@ fun Route.checkpointRoutes() {
         }
 
         if (deleted) {
+            SupervisionHub.broadcast(SupervisionService.snapshot(caller.museumId))
             call.respond(HttpStatusCode.NoContent)
         } else {
             call.respond(HttpStatusCode.NotFound, ErrorResponse("Salle introuvable"))

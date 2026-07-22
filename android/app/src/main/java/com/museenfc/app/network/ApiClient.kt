@@ -6,6 +6,7 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -57,6 +58,22 @@ class MuseeApi(private val baseUrl: String) {
         ApiResult.NetworkFailure(e)
     }
 
+    // Réponses sans corps (204 No Content) : décoder du JSON vide échouerait avec `handle`.
+    private suspend fun handleNoContent(block: () -> HttpResponse): ApiResult<Unit> = try {
+        val response = block()
+        if (response.status.isSuccess()) {
+            ApiResult.Success(Unit)
+        } else {
+            val message = runCatching { json.decodeFromString<ErrorResponse>(response.bodyAsText()).error }
+                .getOrDefault(response.bodyAsText())
+            ApiResult.Rejected(response.status.value, message)
+        }
+    } catch (e: IOException) {
+        ApiResult.NetworkFailure(e)
+    } catch (e: Exception) {
+        ApiResult.NetworkFailure(e)
+    }
+
     suspend fun login(login: String, password: String): ApiResult<LoginResponse> = handle {
         client.post("$baseUrl/api/auth/login") {
             contentType(ContentType.Application.Json)
@@ -86,11 +103,17 @@ class MuseeApi(private val baseUrl: String) {
         }
     }
 
-    suspend fun updateCheckpointThreshold(token: String, id: Int, alertThresholdMin: Int): ApiResult<CheckpointDto> = handle {
+    suspend fun updateCheckpoint(token: String, id: Int, request: UpdateCheckpointRequest): ApiResult<CheckpointDto> = handle {
         client.patch("$baseUrl/api/checkpoints/$id") {
             header("Authorization", "Bearer $token")
             contentType(ContentType.Application.Json)
-            setBody(UpdateCheckpointRequest(alertThresholdMin))
+            setBody(request)
+        }
+    }
+
+    suspend fun deleteCheckpoint(token: String, id: Int): ApiResult<Unit> = handleNoContent {
+        client.delete("$baseUrl/api/checkpoints/$id") {
+            header("Authorization", "Bearer $token")
         }
     }
 
@@ -98,6 +121,26 @@ class MuseeApi(private val baseUrl: String) {
         client.get("$baseUrl/api/scans") {
             header("Authorization", "Bearer $token")
             checkpointId?.let { parameter("checkpointId", it) }
+        }
+    }
+
+    suspend fun listGuards(token: String): ApiResult<List<GuardDto>> = handle {
+        client.get("$baseUrl/api/guards") {
+            header("Authorization", "Bearer $token")
+        }
+    }
+
+    suspend fun createGuard(token: String, request: CreateGuardRequest): ApiResult<GuardDto> = handle {
+        client.post("$baseUrl/api/guards") {
+            header("Authorization", "Bearer $token")
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+    }
+
+    suspend fun deleteGuard(token: String, id: Int): ApiResult<Unit> = handleNoContent {
+        client.delete("$baseUrl/api/guards/$id") {
+            header("Authorization", "Bearer $token")
         }
     }
 }

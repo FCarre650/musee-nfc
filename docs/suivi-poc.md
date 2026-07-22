@@ -77,35 +77,38 @@ de sécurité le plus attendu par ce client (« entreprise de sécurité ») —
 | Verrouillage du patch aléatoire | Contourné en désactivant le verrouillage (§3.3), pas corrigé — le bug lui-même (fiabilité de `provisionAndLock`) n'a pas été résolu, juste mis de côté. |
 | On ne voit pas le nom de la salle sur le tag | Non revérifié dans le code par cette analyse — à valider en test physique (Palier 4/5 du plan de test). |
 | Erreur au nouveau scan | Probablement couvert par les 3 fixes de la branche (`crash Tag invalidé`, `stopListeningForTags` MIUI, `mauvaise puce ciblée`) mais à reconfirmer en test physique, pas de test automatisé pour ce cas. |
-| Seuil d'alerte modifiable en ligne de commande mais pas via WebSocket | Confirmé dans le code : `PATCH /api/checkpoints/{id}` (`CheckpointRoutes.kt`) ne déclenche **aucun** `SupervisionHub.broadcast(...)`, contrairement à `POST /api/scans` qui le fait. C'est bien un manque, pas une impression. |
+| Seuil d'alerte modifiable en ligne de commande mais pas via WebSocket | **Corrigé.** `PATCH` et `DELETE /api/checkpoints/{id}` déclenchent maintenant `SupervisionHub.broadcast(...)`, comme `POST /api/scans`. Vérifié avec un client WebSocket réel : la supervision reçoit bien le nouvel état sans reload. |
 
 ## 5. Reste à faire pour le POC (Must Have + Should Have retenus) — par ordre de priorité
 
 Cet ordre suit la logique « risque sécurité d'abord » du cadrage §6, appliquée à ce qu'il reste
 concrètement à faire à partir de l'état actuel du code.
 
-1. **Trancher §3.1, §3.2, §3.3 ci-dessus** — 30 min de décision évitent de coder dans le vide.
-2. **Sécurité du patch (R1)** — réactiver le verrouillage NFC ou documenter clairement le choix
+1. ~~**CRUD salles/patchs côté front**~~ — **fait.** Onglet « Salles » (réservé `ADMIN`) : liste,
+   modification (nom/zone/seuil/actif), suppression, en plus du provisioning existant regroupé
+   dans le même onglet (sous-onglet « Provisionner »). Backend inchangé (déjà prêt).
+2. ~~**CRUD comptes gardiens**~~ — **fait, périmètre volontairement réduit à création + suppression**
+   (pas de blocage/modification de rôle cette itération, cf. décision du 22/07). Onglet « Comptes »
+   (réservé `ADMIN`) : `GET/POST/DELETE /api/guards` (nouveau). La suppression est refusée (409) si
+   le compte a des passages enregistrés, pour ne jamais perdre l'historique d'audit d'une ronde.
+3. ~~**Corriger le manque de push WebSocket sur `PATCH`/`DELETE /api/checkpoints/{id}`**~~ —
+   **fait**, à l'occasion du point 1 ci-dessus (nécessaire pour que l'édition depuis l'app se
+   voie en direct sur la supervision). Vérifié avec un client WebSocket réel.
+4. **Trancher §3.1, §3.2, §3.3 ci-dessus** — reporté volontairement à une décision avec le
+   professeur avant d'attribuer les actions par rôle ; l'admin peut donc, pour l'instant, toujours
+   scanner une salle, et seul lui peut créer une salle (inchangé).
+5. **Sécurité du patch (R1)** — réactiver le verrouillage NFC ou documenter clairement le choix
    inverse pour la soutenance. C'est le point le plus probable à être challengé par le client et
    les équipes concurrentes vu le contexte de l'appel d'offres.
-3. **Corriger le manque de push WebSocket sur `PATCH /api/checkpoints/{id}`** (§4) — sinon
-   l'écran de supervision ne respecte pas le critère Must Have « mise à jour sans action
-   manuelle » dès qu'un seuil change en direct.
-4. **CRUD salles/patchs côté front** — le back existe (POST/PATCH/DELETE `/api/checkpoints`),
-   mais il manque un écran pour modifier le seuil d'alerte (aujourd'hui : `curl` uniquement,
-   cf. §3 des notes). Should Have explicitement demandé par le client.
-5. **CRUD comptes/rôles gardiens** — aucune route backend trouvée pour créer/bloquer/modifier un
-   gardien (recherché : aucune correspondance). Pourtant listé comme droit de la direction dans
-   le cadrage. À faire si le temps le permet — Should Have.
 6. **Signalement « patch HS / anomalie »** — le champ `status` (`OK`/`ANOMALY`) existe côté
    modèle et route (`ScanRoutes.kt`), mais aucune UI mobile ne permet de l'envoyer autrement
    qu'en valeur par défaut `OK`. À câbler côté `ScanScreen`/`ProvisionScreen` si retenu pour la
    démo (répond directement à la question client « patch arraché/détruit »).
-7. **Vérification terrain des 4 bugs du §4** — repasser le plan de test progressif (paliers 3 à
-   7) avec un vrai téléphone/patch pour confirmer que rien n'est resté cassé après les 3 fixes
-   Android de la branche.
+7. **Vérification terrain des bugs restants du §4** (nom de salle sur le tag, erreur au nouveau
+   scan) — repasser le plan de test progressif (paliers 3 à 7) avec un vrai téléphone/patch pour
+   confirmer que rien n'est resté cassé après les 3 fixes Android de la branche.
 8. **Répétition de la démo complète** (cadrage §10, Palier 8 du plan de test) une fois les points
-   1 à 6 stabilisés.
+   4 à 6 stabilisés.
 
 ## 6. Autres fonctionnalités — priorisées, non implémentées cette semaine
 

@@ -4,6 +4,7 @@ import com.museenfc.backend.db.DatabaseFactory
 import com.museenfc.backend.models.ErrorResponse
 import com.museenfc.backend.routes.authRoutes
 import com.museenfc.backend.routes.checkpointRoutes
+import com.museenfc.backend.routes.guardRoutes
 import com.museenfc.backend.routes.scanRoutes
 import com.museenfc.backend.routes.supervisionRoutes
 import com.museenfc.backend.routes.supervisionWebSocket
@@ -94,6 +95,7 @@ fun Application.module() {
             authRoutes()
             authenticate("auth-jwt") {
                 checkpointRoutes()
+                guardRoutes()
                 scanRoutes()
                 supervisionRoutes()
             }
